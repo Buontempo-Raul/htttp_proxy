@@ -21,13 +21,13 @@
 - **Filtrare Conținut**: Filtrează răspunsurile în funcție de reguli definite.
 - **Modificare Link-uri**: Schimbă link-urile din răspunsuri pentru a redirecționa utilizatorii.
 
-## Technologies Used
+## Technologies Used 👨‍💻
 
 - **C**: Limbajul de programare utilizat pentru implementarea proxy-ului.
 - **Socket Programming**: Folosit pentru gestionarea comunicațiilor între client și server.
 - **Linux**: Sistem de operare pe care rulează proxy-ul.
 
-## Setup and Installation
+## Setup and Installation 💻
 
 1. Clonați repository-ul:
     ```bash
