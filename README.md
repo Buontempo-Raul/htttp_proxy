@@ -38,7 +38,7 @@
     cd http_proxy
     ```
 3. Compilați proiectul:
-    ```
+    ```bash
     make
     ```
 
