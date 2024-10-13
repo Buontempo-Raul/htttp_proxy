@@ -2,7 +2,7 @@
 
 > Bine ați venit la HTTP Proxy Server! Acest proiect implementează un proxy HTTP care interceptează cererile și răspunsurile HTTP, permite editarea antetelor și a conținutului, aplică reguli de modificare a conținutului și filtrează informațiile. 
 
-### Table of Contents
+### Table of Contents 📖
 - [Features](#features)
 - [Technologies Used](#technologies-used)
 - [Setup and Installation](#setup-and-installation)
