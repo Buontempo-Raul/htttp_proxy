@@ -17,7 +17,7 @@
 
 - **Interceptare Cereri**: Interceptează cererile HTTP de la clienți.
 - **Editare Antete**: Permite modificarea antetelor HTTP.
-- **Modificare Conținut**: Aplicați reguli pentru a modifica conținutul răspunsurilor.
+- **Modificare Conținut**: Reguli pentru a modifica conținutul răspunsurilor.
 - **Filtrare Conținut**: Filtrează răspunsurile în funcție de reguli definite.
 - **Modificare Link-uri**: Schimbă link-urile din răspunsuri pentru a redirecționa utilizatorii.
 
