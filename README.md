@@ -13,7 +13,7 @@
 
 ---
 
-🌐## Features
+🌐 ## Features
 
 - **Interceptare Cereri**: Interceptează cererile HTTP de la clienți.
 - **Editare Antete**: Permite modificarea antetelor HTTP.
