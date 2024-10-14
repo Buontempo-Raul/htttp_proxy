@@ -54,7 +54,8 @@
     ```bash
     make
     ```
-5. Rularea componentelor pe terminale separate:
+    ## Usage 
+> Rularea componentelor pe terminale separate:
 - **Server:** Într-un prim terminal, rulați serverul:
    ```bash
   ./server
@@ -67,7 +68,7 @@
   ```bash
   ./client
   ```
-## Usage
+
 
 Pentru a rula serverul proxy, utilizați următoarea comandă:
 ```bash
