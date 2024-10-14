@@ -37,29 +37,28 @@
     ```bash
     cd http_proxy
     ```
-3. Compilați proiectul:
-    ```bash
-    make
-    ```
-    Make:
+3. Compilați proiectul: Proiectul conține trei componente: client, proxy și server. Fiecare trebuie să fie rulat pe terminale diferite. Utilizați comanda make pentru a compila toate componentele. În Makefile, veți găsi definițiile pentru fiecare componentă:
    ```bash
    all: client proxy server
+   
    client: client.c
     gcc client.c -o client
-   proxy: proxy.c
+   
+   proxy: proxy.c   
     gcc proxy.c -o proxy
+   
    server: server.c
     gcc server.c -o server
    ```
-
-
-
-
-
-
-
-
-
+4. Compilați proiectul:
+    ```bash
+    make
+    ```
+5.Rularea componentelor pe terminale separate:
+- **Server:** Într-un prim terminal, rulați serverul:
+```bash
+  ./server
+```
 ## Usage
 
 Pentru a rula serverul proxy, utilizați următoarea comandă:
