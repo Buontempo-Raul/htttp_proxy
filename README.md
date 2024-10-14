@@ -41,6 +41,24 @@
     ```bash
     make
     ```
+    Make:
+   ```bash
+   all: client proxy server
+   client: client.c
+    gcc client.c -o client
+   proxy: proxy.c
+    gcc proxy.c -o proxy
+   server: server.c
+    gcc server.c -o server
+   ```
+
+
+
+
+
+
+
+
 
 ## Usage
 
