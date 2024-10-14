@@ -54,11 +54,19 @@
     ```bash
     make
     ```
-5.Rularea componentelor pe terminale separate:
+5. Rularea componentelor pe terminale separate:
 - **Server:** Într-un prim terminal, rulați serverul:
-```bash
+   ```bash
   ./server
-```
+   ```
+- **Proxy:** Într-un al doilea terminal, rulați proxy-ul HTTP:
+  ```bash
+  ./proxy
+  ```
+- **Client:** Într-un al treilea terminal, rulați clientul:
+  ```bash
+  ./client
+  ```
 ## Usage
 
 Pentru a rula serverul proxy, utilizați următoarea comandă:
