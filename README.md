@@ -46,3 +46,6 @@
 ```bash
 ./http_proxy
 ```
+## Conectarea browser-ului la serverul proxy
+> Intrati in setarile browser-ului si cautati setarea manuala a proxy-ului. Aici veti seta adresa la "localhost" si la portul 8080.
+
