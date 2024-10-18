@@ -38,7 +38,7 @@
     ```bash
     gcc http_proxy.c -o http_proxy
     ```
-## Usage 
+## Usage 🧰
 > Rularea proxy-ului:
 ```bash
 ./http_proxy
