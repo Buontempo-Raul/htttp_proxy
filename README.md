@@ -8,9 +8,6 @@
 - [Setup and Installation](#setup-and-installation)
 - [Usage](#usage)
 - [Connect to Browser](#Browser-connect)
-- [Contributing](#contributing)
-- [License](#license)
-- [Contact](#contact)
 ---
 
 ## Features 🌐
