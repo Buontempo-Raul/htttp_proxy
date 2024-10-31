@@ -5,10 +5,14 @@
 #include <arpa/inet.h>
 #include <pthread.h>
 #include <netdb.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
 
 
 #define PORT 8080
 #define BUF_SIZE 8192
+#define filename "intercepted_data.txt"
 
 // Functii pentru optiuni de meniu
 void intercept_traffic();
@@ -58,11 +62,21 @@ void forward_to_server(int client_socket, char *request) {
     // Trimitem cererea HTTP catre server
     send(server_socket, request, strlen(request), 0);
 
+    int fd = open(filename,O_WRONLY);
+    if(fd<0)
+    {
+        perror("Eroare la deschiderea fisierului Intercepted_data.txt");
+        close(server_socket);
+    }
+
     // Primesc raspunsul de la server si il trimitem inapoi clientului
     int bytes_received;
     while ((bytes_received = recv(server_socket, buffer, BUF_SIZE, 0)) > 0) {
+        write(fd,buffer,bytes_received);
         send(client_socket, buffer, bytes_received, 0);
     }
+
+    close(fd);
 
     close(server_socket);
 }
