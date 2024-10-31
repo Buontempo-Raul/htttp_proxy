@@ -36,13 +36,14 @@
     ```
 3. Compilați codul in python:
     ```bash
-    python3 gui.py
+    gcc http_proxy.c -o http_proxy
     ```
 ## Usage 🧰
 > Rularea proxy-ului:
 ```bash
-./http_proxy
+python3 gui.py
 ```
+Se face direct din aceasta comanda care la randul ei va porni server-ul.
 ## Browser Connect
 **Intrati in setarile browser-ului si cautati setarea manuala a proxy-ului. Aici veti seta adresa la "localhost" si la portul 8080.**    
 - **!!!Daca nu permite browser-ul aceasta optiune, puteti incerca prin a folosi din terminal comdanda**
