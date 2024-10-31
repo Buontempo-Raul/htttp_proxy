@@ -201,18 +201,6 @@ void show_menu() {
     }
 }
 
-void print_http_proxy_title() {
-printf("//////////////////////////////////////////////////////////\n");
-printf("// _   _ _____ _____ ____    ____                       //\n");
-printf("//| | | |_   _|_   _|  _ \\  |  _ \\ _ __ _____  ___   _  //\n");
-printf("//| |_| | | |   | | | |_) | | |_) | '__/ _ \\ \\/ / | | | //\n");
-printf("//|  _  | | |   | | |  __/  |  __/| | | (_) >  <| |_| | //\n");
-printf("//|_| |_| |_|   |_| |_|     |_|   |_|  \\___/_/\\_\\__,  / //\n");
-printf("//                                               |___/  //\n");
-printf("//////////////////////////////////////////////////////////\n");
-
-}
-
 // Functii pentru actiunile din meniu
 void intercept_traffic() {
     printf("Interceptare trafic HTTP activata.\n");
