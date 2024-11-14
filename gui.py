@@ -98,6 +98,14 @@ class ProxyServerGUI:
         self.response_headers.delete("1.0", tk.END)
         self.response_body.delete("1.0", tk.END)
 
+    def send_intercept_command(self, command):
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.connect(('127.0.0.1', 9091))  # Conectare la serverul C pe portul de control
+                s.sendall(command.encode())
+        except Exception as e:
+            print(f"Failed to send intercept command: {e}")
+
     def toggle_intercept(self):
         self.intercept_enabled = not self.intercept_enabled
         if self.intercept_enabled:
