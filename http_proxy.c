@@ -5,242 +5,255 @@
 #include <arpa/inet.h>
 #include <pthread.h>
 #include <netdb.h>
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <fcntl.h>
+#include <http_parser.h>
+#include <sys/socket.h>
 
+#define BUFFER_SIZE 8192
+#define PROXY_PORT 8080
+#define GUI_PORT 9090  // Port for GUI communication
+#define INTERCEPT_PORT 9091  // Port for intercept toggle control
 
-#define PORT 8080
-#define BUF_SIZE 8192
-#define filename "intercepted_data.txt"
+typedef struct {
+    char method[8];
+    char url[1024];
+    char headers[BUFFER_SIZE];
+    char body[BUFFER_SIZE];
+    size_t body_length;
+} http_request;
 
-// Functii pentru optiuni de meniu
-void intercept_traffic();
-void edit_headers();
-void modify_content_rules();
-void filter_content();
-void modify_links();
+http_request current_request;
 
-// Functie pentru a trimite cererea catre server si primire raspuns
-void forward_to_server(int client_socket, char *request) {
-    int server_socket;
-    struct sockaddr_in server_addr;
-    struct hostent *server;
-    char buffer[BUF_SIZE];
+// Global intercept flag to control request/response flow
+int intercept_enabled = 1;
+pthread_mutex_t intercept_lock;
 
-    // Extragem domeniul din cererea HTTP (presupunand ca cererea e HTTP GET)
-    char host[256];
-    sscanf(request, "GET http://%255[^/] ", host); // Extragem domeniul web
-
-    // Rezolvam adresa IP a serverului pe baza domeniului
-    server = gethostbyname(host);
-    if (server == NULL) {
-        perror("Eroare la rezolvarea domeniului");
-        return;
-    }
-
-    // Configuram socketul pentru a se conecta la server
-    server_socket = socket(AF_INET, SOCK_STREAM, 0);
-    if (server_socket < 0) {
-        perror("Eroare la crearea socket-ului pentru server");
-        return;
-    }
-
-    memset(&server_addr, 0, sizeof(server_addr));
-    server_addr.sin_family = AF_INET;
-    server_addr.sin_port = htons(80); // HTTP foloseste portul 80
-    memcpy(&server_addr.sin_addr.s_addr, server->h_addr_list[0], server->h_length);
-
-
-    // Ne conectam la server
-    if (connect(server_socket, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0) {
-        perror("Eroare la conectarea la serverul web");
-        close(server_socket);
-        return;
-    }
-
-    // Trimitem cererea HTTP catre server
-    send(server_socket, request, strlen(request), 0);
-
-    int fd = open(filename,O_WRONLY);
-    if(fd<0)
-    {
-        perror("Eroare la deschiderea fisierului Intercepted_data.txt");
-        close(server_socket);
-    }
-
-    // Primesc raspunsul de la server si il trimitem inapoi clientului
-    int bytes_received;
-    while ((bytes_received = recv(server_socket, buffer, BUF_SIZE, 0)) > 0) {
-        write(fd,buffer,bytes_received);
-        send(client_socket, buffer, bytes_received, 0);
-    }
-
-    close(fd);
-
-    close(server_socket);
+// Initialize functions for http_parser callbacks
+int on_url(http_parser* parser, const char* at, size_t length) {
+    strncat(current_request.url, at, length);
+    return 0;
 }
 
-void *handle_client(void *arg) {
-    int client_socket = *((int *)arg);
-    free(arg);
-    char buffer[BUF_SIZE];
-    int bytes_received;
+int on_header_field(http_parser* parser, const char* at, size_t length) {
+    strncat(current_request.headers, at, length);
+    return 0;
+}
 
-    // Primirea cererii de la client
-    bytes_received = recv(client_socket, buffer, BUF_SIZE - 1, 0);
-    if (bytes_received < 0) {
-        perror("Eroare la primirea cererii de la client");
+int on_header_value(http_parser* parser, const char* at, size_t length) {
+    strncat(current_request.headers, ": ", sizeof(current_request.headers) - strlen(current_request.headers) - 1);
+    strncat(current_request.headers, at, length);
+    strncat(current_request.headers, "\r\n", sizeof(current_request.headers) - strlen(current_request.headers) - 1);
+    return 0;
+}
+
+int on_body(http_parser* parser, const char* at, size_t length) {
+    strncat(current_request.body, at, length);
+    current_request.body_length += length;
+    return 0;
+}
+
+int on_message_complete(http_parser* parser) {
+    return 0;
+}
+
+void parse_http_request(const char* request, size_t length) {
+    http_parser parser;
+    http_parser_init(&parser, HTTP_REQUEST);
+
+    http_parser_settings settings;
+    memset(&settings, 0, sizeof(settings));
+    settings.on_url = on_url;
+    settings.on_header_field = on_header_field;
+    settings.on_header_value = on_header_value;
+    settings.on_body = on_body;
+    settings.on_message_complete = on_message_complete;
+
+    memset(&current_request, 0, sizeof(current_request));
+    http_parser_execute(&parser, &settings, request, length);
+}
+
+// Send intercepted request or response to GUI and wait for decision
+int communicate_with_gui(const char* message, const char* type) {
+    int gui_socket = socket(AF_INET, SOCK_STREAM, 0);
+    if (gui_socket < 0) {
+        perror("Failed to create socket");
+        return 0;
+    }
+
+    struct sockaddr_in gui_addr;
+    gui_addr.sin_family = AF_INET;
+    gui_addr.sin_port = htons(GUI_PORT);
+    inet_pton(AF_INET, "127.0.0.1", &gui_addr.sin_addr);
+
+    if (connect(gui_socket, (struct sockaddr*)&gui_addr, sizeof(gui_addr)) < 0) {
+        perror("Failed to connect to GUI");
+        close(gui_socket);
+        return 0;
+    }
+
+    // Send message type (REQUEST or RESPONSE) followed by actual message
+    send(gui_socket, type, strlen(type), 0);
+    send(gui_socket, "\n\n", 2, 0);  // Separator
+    send(gui_socket, message, strlen(message), 0);
+
+    char decision[BUFFER_SIZE];
+    int n = recv(gui_socket, decision, sizeof(decision), 0);
+    close(gui_socket);
+
+    if (n > 0 && strncmp(decision, "FORWARD", 7) == 0) return 1;
+    if (strcmp(type, "REQUEST") == 0) {
+        printf("Request was dropped by the GUI\n");
+    } else if (strcmp(type, "RESPONSE") == 0) {
+        printf("Response was dropped by the GUI\n");
+    }
+    return 0;
+}
+
+void* handle_client(void* arg) {
+    int client_socket = *(int*)arg;
+    free(arg);
+
+    char buffer[BUFFER_SIZE];
+    int bytes_read = recv(client_socket, buffer, sizeof(buffer) - 1, 0);
+    buffer[bytes_read] = '\0';
+
+    parse_http_request(buffer, bytes_read);
+
+    // Check intercept status
+    pthread_mutex_lock(&intercept_lock);
+    int intercept = intercept_enabled;
+    pthread_mutex_unlock(&intercept_lock);
+
+    // If intercept is enabled, send request to GUI and check decision
+    if (intercept && !communicate_with_gui(buffer, "REQUEST")) {
+        close(client_socket);
+        return NULL;  // Drop request if GUI decides so
+    }
+
+    // Forward the request to the destination server
+    char host[256];
+    sscanf(current_request.headers, "Host: %s", host);
+
+    int server_socket;
+    struct sockaddr_in server_addr;
+    struct hostent* server = gethostbyname(host);
+    if (!server) {
+        perror("Host resolution failed");
         close(client_socket);
         return NULL;
     }
 
-    buffer[bytes_received] = '\0'; // Asiguram terminarea stringului
+    server_socket = socket(AF_INET, SOCK_STREAM, 0);
+    server_addr.sin_family = AF_INET;
+    memcpy(&server_addr.sin_addr.s_addr, server->h_addr_list[0], server->h_length);
+    server_addr.sin_port = htons(80);
 
-    printf("Cerere interceptata:\n%s\n", buffer);
+    connect(server_socket, (struct sockaddr*)&server_addr, sizeof(server_addr));
+    send(server_socket, buffer, bytes_read, 0);
 
-    forward_to_server(client_socket, buffer);
+    // Read the response from the server and send it to GUI if intercept is on
+    int n;
+    while ((n = recv(server_socket, buffer, sizeof(buffer), 0)) > 0) {
+        buffer[n] = '\0';
 
-    // Logica pentru a modifica cererile HTTP, anteturile si continutul
+        // Intercept and send the response to GUI for inspection if intercept is enabled
+        if (intercept && !communicate_with_gui(buffer, "RESPONSE")) {
+            break;  // Drop response if GUI decides so
+        }
 
+        // Send the response to the client
+        send(client_socket, buffer, n, 0);
+    }
+
+    close(server_socket);
     close(client_socket);
     return NULL;
 }
 
-void start_proxy() {
-    int server_socket, *client_socket;
-    struct sockaddr_in server_addr, client_addr;
-    socklen_t client_addr_size = sizeof(client_addr);
-
-    // Creare socket
-    server_socket = socket(AF_INET, SOCK_STREAM, 0);
-    if (server_socket < 0) {
-        perror("Eroare la crearea socket-ului");
-        exit(EXIT_FAILURE);
+void* intercept_control_listener(void* arg) {
+    int intercept_socket = socket(AF_INET, SOCK_STREAM, 0);
+    if (intercept_socket < 0) {
+        perror("Failed to create intercept control socket");
+        return NULL;
     }
 
-    // Configurarea serverului
-    server_addr.sin_family = AF_INET;
-    server_addr.sin_port = htons(PORT);
-    server_addr.sin_addr.s_addr = INADDR_ANY;
+    struct sockaddr_in intercept_addr;
+    intercept_addr.sin_family = AF_INET;
+    intercept_addr.sin_addr.s_addr = INADDR_ANY;
+    intercept_addr.sin_port = htons(INTERCEPT_PORT);
 
-    // Binding
-    if (bind(server_socket, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0) {
-        perror("Eroare la bind");
-        close(server_socket);
-        exit(EXIT_FAILURE);
+    if (bind(intercept_socket, (struct sockaddr*)&intercept_addr, sizeof(intercept_addr)) < 0) {
+        perror("Failed to bind intercept control socket");
+        close(intercept_socket);
+        return NULL;
     }
 
-    // Ascultam pentru conexiuni
-    if (listen(server_socket, 10) < 0) {
-        perror("Eroare la listen");
-        close(server_socket);
-        exit(EXIT_FAILURE);
-    }
+    listen(intercept_socket, 1);
+    printf("Intercept control listener running on port %d\n", INTERCEPT_PORT);
 
-    printf("Proxy-ul HTTP ruleaza pe portul %d...\n", PORT);
-
-    // Loop pentru acceptarea conexiunilor
     while (1) {
-        client_socket = malloc(sizeof(int));
-        *client_socket = accept(server_socket, (struct sockaddr *)&client_addr, &client_addr_size);
-        if (*client_socket < 0) {
-            perror("Eroare la accept");
-            free(client_socket);
+        int control_socket = accept(intercept_socket, NULL, NULL);
+        if (control_socket < 0) {
+            perror("Failed to accept intercept control connection");
             continue;
         }
 
-        // Creare thread pentru a trata fiecare client
+        char command[BUFFER_SIZE];
+        int n = recv(control_socket, command, sizeof(command), 0);
+        command[n] = '\0';
+
+        if (strcmp(command, "INTERCEPT_ON") == 0) {
+            pthread_mutex_lock(&intercept_lock);
+            intercept_enabled = 1;
+            pthread_mutex_unlock(&intercept_lock);
+            printf("Intercept enabled by GUI\n");
+        } else if (strcmp(command, "INTERCEPT_OFF") == 0) {
+            pthread_mutex_lock(&intercept_lock);
+            intercept_enabled = 0;
+            pthread_mutex_unlock(&intercept_lock);
+            printf("Intercept disabled by GUI\n");
+        }
+
+        close(control_socket);
+    }
+
+    close(intercept_socket);
+    return NULL;
+}
+
+int create_server_socket(int port) {
+    int server_fd = socket(AF_INET, SOCK_STREAM, 0);
+    struct sockaddr_in address = { .sin_family = AF_INET, .sin_addr.s_addr = INADDR_ANY, .sin_port = htons(port) };
+
+    bind(server_fd, (struct sockaddr*)&address, sizeof(address));
+    listen(server_fd, 10);
+    return server_fd;
+}
+
+void accept_connections(int server_fd) {
+    struct sockaddr_in client_addr;
+    socklen_t client_addr_len = sizeof(client_addr);
+
+    while (1) {
+        int* client_socket = malloc(sizeof(int));
+        *client_socket = accept(server_fd, (struct sockaddr*)&client_addr, &client_addr_len);
         pthread_t thread_id;
-        if (pthread_create(&thread_id, NULL, handle_client, client_socket) != 0) {
-            perror("Eroare la crearea thread-ului");
-            free(client_socket);
-            continue;
-        }
-        pthread_detach(thread_id); // Eliberam resursele thread-ului cand acesta se termina
+        pthread_create(&thread_id, NULL, handle_client, client_socket);
+        pthread_detach(thread_id);
     }
-
-    close(server_socket);
-}
-
-void show_menu() {
-    int option;
-    while (1) {
-        printf("\n=== Meniu HTTP Proxy ===\n");
-        printf("1. Intercepteaza trafic HTTP\n");
-        printf("2. Permite editare headere HTTP si continut\n");
-        printf("3. Reguli de modificare de continut\n");
-        printf("4. Filtre de continut\n");
-        printf("5. Modificare link-uri\n");
-        printf("6. Iesi\n");
-        printf("Selecteaza o optiune: ");
-        scanf("%d", &option);
-
-        switch (option) {
-            case 1:
-                intercept_traffic();
-                break;
-            case 2:
-                edit_headers();
-                break;
-            case 3:
-                modify_content_rules();
-                break;
-            case 4:
-                filter_content();
-                break;
-            case 5:
-                modify_links();
-                break;
-            case 6:
-                printf("Iesire din program.\n");
-                exit(0);
-            default:
-                printf("Optiune invalida. Incearca din nou.\n");
-        }
-    }
-}
-
-// Functii pentru actiunile din meniu
-void intercept_traffic() {
-    printf("Interceptare trafic HTTP activata.\n");
-    // Logica pentru a intercepta cererile si raspunsurile HTTP
-}
-
-void edit_headers() {
-    printf("Editare headere HTTP activata.\n");
-    //Logica pentru a permite editarea headerelor HTTP
-}
-
-void modify_content_rules() {
-    printf("Aplicare reguli de modificare a continutului.\n");
-    //Reguli de modificare pentru continut
-}
-
-void filter_content() {
-    printf("Filtrare continut activata.\n");
-    //Logica pentru filtrarea continutului
-}
-
-void modify_links() {
-    printf("Modificare link-uri activata.\n");
-    //Logica pentru modificarea link-urilor in continut
 }
 
 int main() {
-    pthread_t proxy_thread;
+    pthread_mutex_init(&intercept_lock, NULL);
 
-   
+    int server_fd = create_server_socket(PROXY_PORT);
+    printf("Proxy Server running on port %d\n", PROXY_PORT);
 
-    // Pornim proxy-ul intr-un thread separat
-    if (pthread_create(&proxy_thread, NULL, (void *)start_proxy, NULL) != 0) {
-        perror("Eroare la crearea thread-ului pentru proxy");
-        exit(EXIT_FAILURE);
-    }
+    pthread_t control_thread;
+    pthread_create(&control_thread, NULL, intercept_control_listener, NULL);
 
-    // Afisam meniul de interactiune
-    print_http_proxy_title();
-    show_menu();
+    accept_connections(server_fd);
 
+    close(server_fd);
+    pthread_mutex_destroy(&intercept_lock);
     return 0;
 }
