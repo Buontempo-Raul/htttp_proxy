@@ -44,12 +44,24 @@
     ```bash
     cd http_proxy
     ```
-3. Compilați codul proxy-ului:
+3. Instalați biblioteca http_parser:
+   - Pentru majoritatea distribuțiilor Linux (Ubuntu/Debian), utilizați comanda:
+   ```bash
+   sudo apt-get install libhttp-parser-dev
+   ```
+   - Pentru alte distribuții sau dacă http_parser nu este inclus în managerul de pachete, instalați-l din surse:
+   ```bash
+   git clone https://github.com/nodejs/http-parser.git
+   cd http-parser
+   make
+   sudo make install
+   ```
+4. Compilați codul proxy-ului:
     ```bash
     gcc -o http_proxy http_proxy.c -lhttp_parser -lpthread
     ```
 
-4. Instalați dependențele pentru interfața grafică:
+5. Instalați dependențele pentru interfața grafică:
     ```bash
     pip install tkinter
     ```
@@ -90,13 +102,10 @@ Interfața grafică este implementată în **Python** folosind biblioteca **Tkin
 - Modificarea și interceptarea traficului.
 - Gestionarea istorică a cererilor/răspunsurilor.
 - Decizii rapide de tip *Forward* sau *Drop* pentru cereri și răspunsuri.
+Pentru a folosi interfața, asigurați-vă că serverul proxy rulează înainte de a lansa GUI-ul.
 
 ### Funcționalități Interfață:
 - **Tab Cereri**: Vizualizați și modificați antetele și conținutul cererilor HTTP.
 - **Tab Răspunsuri**: Vizualizați și modificați antetele și conținutul răspunsurilor HTTP.
 - **Tab Istoric**: Consultați istoricul cererilor/răspunsurilor procesate.
 - **Control Interceptare**: Activați sau dezactivați interceptarea traficului în timp real.
-
----
-
-Pentru mai multe detalii, consultați codul sursă sau documentația proiectului! 🚀
