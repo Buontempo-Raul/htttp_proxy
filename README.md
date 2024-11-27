@@ -102,7 +102,7 @@ Interfața grafică este implementată în **Python** folosind biblioteca **Tkin
 - Modificarea și interceptarea traficului.
 - Gestionarea istorică a cererilor/răspunsurilor.
 - Decizii rapide de tip *Forward* sau *Drop* pentru cereri și răspunsuri. 
-Pentru a folosi interfața, asigurați-vă că serverul proxy rulează înainte de a lansa GUI-ul.
+ Pentru a folosi interfața, asigurați-vă că serverul proxy rulează înainte de a lansa GUI-ul.
 
 ### Funcționalități Interfață:
 - **Tab Cereri**: Vizualizați și modificați antetele și conținutul cererilor HTTP.
