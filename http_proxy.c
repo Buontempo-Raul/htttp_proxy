@@ -40,7 +40,7 @@ int history_count = 0;
 int intercept_enabled = 1;
 pthread_mutex_t intercept_lock;
 
-// HTTP parser callback functions
+
 int on_url(http_parser* parser, const char* at, size_t length) {
     strncat(current_request.url, at, length);
     return 0;
@@ -84,7 +84,7 @@ void parse_http_request(const char* request, size_t length) {
     http_parser_execute(&parser, &settings, request, length);
 }
 
-// Add an entry to the history
+
 void add_to_history(const char* method, const char* url, const char* protocol, const char* host,
                     const char* request_data, const char* response_data) {
     pthread_mutex_lock(&intercept_lock);
@@ -103,7 +103,7 @@ void add_to_history(const char* method, const char* url, const char* protocol, c
     pthread_mutex_unlock(&intercept_lock);
 }
 
-// Send intercepted request or response to GUI and wait for decision
+
 int communicate_with_gui(const char* message, const char* type) {
     int gui_socket = socket(AF_INET, SOCK_STREAM, 0);
     if (gui_socket < 0) {
@@ -122,9 +122,9 @@ int communicate_with_gui(const char* message, const char* type) {
         return 0;
     }
 
-    // Send message type (REQUEST or RESPONSE) followed by actual message
+    
     send(gui_socket, type, strlen(type), 0);
-    send(gui_socket, "\n\n", 2, 0);  // Separator
+    send(gui_socket, "\n\n", 2, 0);  
     send(gui_socket, message, strlen(message), 0);
 
     char decision[BUFFER_SIZE];
@@ -150,7 +150,7 @@ void* handle_client(void* arg) {
 
     parse_http_request(buffer, bytes_read);
 
-    // Check intercept status
+   
     pthread_mutex_lock(&intercept_lock);
     int intercept = intercept_enabled;
     pthread_mutex_unlock(&intercept_lock);
@@ -158,19 +158,19 @@ void* handle_client(void* arg) {
     char host[256];
     sscanf(current_request.headers, "Host: %s", host);
 
-    char method[16] = "GET";  // Default method
-    char protocol[16] = "HTTP";  // Default protocol
+    char method[16] = "GET";  
+    char protocol[16] = "HTTP"; 
 
-    // Parse method and URL
+   
     sscanf(buffer, "%s %s %s", method, current_request.url, protocol);
 
-    // If intercept is enabled, send request to GUI and check decision
+    
     if (intercept && !communicate_with_gui(buffer, "REQUEST")) {
         close(client_socket);
-        return NULL;  // Drop request if GUI decides so
+        return NULL; 
     }
 
-    // Forward the request to the destination server
+    
     int server_socket;
     struct sockaddr_in server_addr;
     struct hostent* server = gethostbyname(host);
@@ -188,16 +188,16 @@ void* handle_client(void* arg) {
     connect(server_socket, (struct sockaddr*)&server_addr, sizeof(server_addr));
     send(server_socket, buffer, bytes_read, 0);
 
-    // Read the response from the server
+    
     char response_buffer[BUFFER_SIZE];
     int response_size = 0;
     while ((response_size = recv(server_socket, response_buffer, sizeof(response_buffer), 0)) > 0) {
         response_buffer[response_size] = '\0';
 
-        // Add to history
+       
         add_to_history(method, current_request.url, protocol, host, buffer, response_buffer);
 
-        // Intercept response if enabled
+     
         if (intercept && !communicate_with_gui(response_buffer, "RESPONSE")) {
             break;
         }
