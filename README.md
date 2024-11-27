@@ -48,7 +48,6 @@
 ```bash
 python3 gui.py
 ```
-Se face direct din aceasta comanda care la randul ei va porni server-ul.
 ## Browser Connect
 **Intrati in setarile browser-ului si cautati setarea manuala a proxy-ului. Aici veti seta adresa la "localhost" si la portul 8080.**    
 - **!!!Daca nu permite browser-ul aceasta optiune, puteti incerca prin a folosi din terminal comdanda**
