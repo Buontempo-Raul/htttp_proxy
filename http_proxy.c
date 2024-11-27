@@ -7,11 +7,13 @@
 #include <netdb.h>
 #include <http_parser.h>
 #include <sys/socket.h>
+#include <time.h>
 
 #define BUFFER_SIZE 8192
 #define PROXY_PORT 8080
 #define GUI_PORT 9090  // Port for GUI communication
 #define INTERCEPT_PORT 9091  // Port for intercept toggle control
+#define MAX_HISTORY 1000  // Maximum number of history entries
 
 typedef struct {
     char method[8];
@@ -21,13 +23,24 @@ typedef struct {
     size_t body_length;
 } http_request;
 
-http_request current_request;
+typedef struct {
+    char method[8];
+    char url[1024];
+    char protocol[16];
+    char host[256];
+    time_t timestamp;
+    char request_data[BUFFER_SIZE];
+    char response_data[BUFFER_SIZE];
+} history_entry;
 
-// Global intercept flag to control request/response flow
+http_request current_request;
+history_entry history[MAX_HISTORY];
+int history_count = 0;
+
 int intercept_enabled = 1;
 pthread_mutex_t intercept_lock;
 
-// Initialize functions for http_parser callbacks
+// HTTP parser callback functions
 int on_url(http_parser* parser, const char* at, size_t length) {
     strncat(current_request.url, at, length);
     return 0;
@@ -69,6 +82,25 @@ void parse_http_request(const char* request, size_t length) {
 
     memset(&current_request, 0, sizeof(current_request));
     http_parser_execute(&parser, &settings, request, length);
+}
+
+// Add an entry to the history
+void add_to_history(const char* method, const char* url, const char* protocol, const char* host,
+                    const char* request_data, const char* response_data) {
+    pthread_mutex_lock(&intercept_lock);
+
+    if (history_count < MAX_HISTORY) {
+        history_entry* entry = &history[history_count++];
+        strncpy(entry->method, method, sizeof(entry->method) - 1);
+        strncpy(entry->url, url, sizeof(entry->url) - 1);
+        strncpy(entry->protocol, protocol, sizeof(entry->protocol) - 1);
+        strncpy(entry->host, host, sizeof(entry->host) - 1);
+        entry->timestamp = time(NULL);
+        strncpy(entry->request_data, request_data, sizeof(entry->request_data) - 1);
+        strncpy(entry->response_data, response_data, sizeof(entry->response_data) - 1);
+    }
+
+    pthread_mutex_unlock(&intercept_lock);
 }
 
 // Send intercepted request or response to GUI and wait for decision
@@ -123,6 +155,15 @@ void* handle_client(void* arg) {
     int intercept = intercept_enabled;
     pthread_mutex_unlock(&intercept_lock);
 
+    char host[256];
+    sscanf(current_request.headers, "Host: %s", host);
+
+    char method[16] = "GET";  // Default method
+    char protocol[16] = "HTTP";  // Default protocol
+
+    // Parse method and URL
+    sscanf(buffer, "%s %s %s", method, current_request.url, protocol);
+
     // If intercept is enabled, send request to GUI and check decision
     if (intercept && !communicate_with_gui(buffer, "REQUEST")) {
         close(client_socket);
@@ -130,9 +171,6 @@ void* handle_client(void* arg) {
     }
 
     // Forward the request to the destination server
-    char host[256];
-    sscanf(current_request.headers, "Host: %s", host);
-
     int server_socket;
     struct sockaddr_in server_addr;
     struct hostent* server = gethostbyname(host);
@@ -150,18 +188,21 @@ void* handle_client(void* arg) {
     connect(server_socket, (struct sockaddr*)&server_addr, sizeof(server_addr));
     send(server_socket, buffer, bytes_read, 0);
 
-    // Read the response from the server and send it to GUI if intercept is on
-    int n;
-    while ((n = recv(server_socket, buffer, sizeof(buffer), 0)) > 0) {
-        buffer[n] = '\0';
+    // Read the response from the server
+    char response_buffer[BUFFER_SIZE];
+    int response_size = 0;
+    while ((response_size = recv(server_socket, response_buffer, sizeof(response_buffer), 0)) > 0) {
+        response_buffer[response_size] = '\0';
 
-        // Intercept and send the response to GUI for inspection if intercept is enabled
-        if (intercept && !communicate_with_gui(buffer, "RESPONSE")) {
-            break;  // Drop response if GUI decides so
+        // Add to history
+        add_to_history(method, current_request.url, protocol, host, buffer, response_buffer);
+
+        // Intercept response if enabled
+        if (intercept && !communicate_with_gui(response_buffer, "RESPONSE")) {
+            break;
         }
 
-        // Send the response to the client
-        send(client_socket, buffer, n, 0);
+        send(client_socket, response_buffer, response_size, 0);
     }
 
     close(server_socket);
