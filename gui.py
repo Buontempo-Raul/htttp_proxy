@@ -37,12 +37,12 @@ class ProxyServerGUI:
             self.client_socket, _ = self.server_socket.accept()
             data = self.client_socket.recv(8192).decode(errors="replace")
 
-            # Split into type and actual content
+           
             parts = data.split("\n\n", 1)
             self.current_message_type = parts[0] if len(parts) > 0 else ""
             content = parts[1] if len(parts) > 1 else ""
 
-            # Display based on type
+          
             if self.current_message_type == "REQUEST":
                 self.root.after(0, self.display_request, content)
                 self.add_to_history("REQUEST", content)
@@ -52,17 +52,10 @@ class ProxyServerGUI:
 
     @staticmethod
     def sanitize_text(text):
-        """
-        Remove extra control characters and ensure clean text.
-        """
-        # Normalize line endings and remove trailing whitespace
         text = text.replace("\r\n", "\n").replace("\r", "\n").strip()
         return text
 
     def split_headers_body(self, data):
-        """
-        Split HTTP data into headers and body based on the first occurrence of \r\n\r\n or \n\n.
-        """
         if "\r\n\r\n" in data:
             headers, body = data.split("\r\n\r\n", 1)
         elif "\n\n" in data:
@@ -74,7 +67,7 @@ class ProxyServerGUI:
     def display_request(self, request_data):
         request_data = self.sanitize_text(request_data)
         if not request_data.strip():
-            return  # Skip if data is empty
+            return  
 
         headers, body = self.split_headers_body(request_data)
         self.request_headers.delete("1.0", tk.END)
@@ -88,7 +81,7 @@ class ProxyServerGUI:
     def display_response(self, response_data):
         response_data = self.sanitize_text(response_data)
         if not response_data.strip():
-            return  # Skip if data is empty
+            return 
 
         headers, body = self.split_headers_body(response_data)
         self.response_headers.delete("1.0", tk.END)
@@ -138,7 +131,7 @@ class ProxyServerGUI:
         method = None
         protocol = "HTTP"
 
-        # Extract basic information
+       
         for line in headers.splitlines():
             if line.lower().startswith("host:"):
                 host = line.split(":", 1)[1].strip()
@@ -148,9 +141,9 @@ class ProxyServerGUI:
                     method, url, protocol = parts
 
         if not method or not url:
-            return  # Skip saving if method or URL is missing
+            return  
 
-        # Update history entry if response exists
+       
         if message_type == "RESPONSE":
             for entry in self.history:
                 if entry["url"] == url and "response_body" not in entry:
@@ -158,7 +151,7 @@ class ProxyServerGUI:
                     entry["response_headers"] = headers
                     return
 
-        # Otherwise, add a new request entry
+       
         entry = {
             "timestamp": timestamp,
             "type": message_type,
@@ -176,10 +169,10 @@ class ProxyServerGUI:
         selected_item = self.history_list.selection()
         if selected_item:
             item = selected_item[0]
-            values = self.history_list.item(item, "values")  # Get displayed values from the Treeview
+            values = self.history_list.item(item, "values") 
             method, url, timestamp, protocol = values
 
-            # Find the corresponding entry in the history list
+          
             for entry in self.history:
                 if entry["timestamp"] == timestamp and entry["url"] == url:
                     self.open_details_window(entry)
@@ -203,26 +196,26 @@ class ProxyServerGUI:
             response_text.insert("1.0", f"Response:\n{entry['response_headers']}\n\n{entry['response_body']}")
 
 
-        # Function to switch content
+       
         def show_request():
             content_text.delete("1.0", tk.END)
             content_text.insert("1.0", f"{entry['headers']}\n\n{entry['body']}")
 
         def show_response():
-            # Assume response data is stored similarly
+          
             response_data = entry.get("response_body", "")
             response_headers = entry.get("response_headers", "")
             content_text.delete("1.0", tk.END)
             content_text.insert("1.0", f"{response_headers}\n\n{response_data}")
 
-        # Buttons to toggle between request and response
+       
         request_btn = ttk.Button(button_frame, text="Show Request", command=show_request)
         request_btn.pack(side=tk.LEFT, padx=5)
 
         response_btn = ttk.Button(button_frame, text="Show Response", command=show_response)
         response_btn.pack(side=tk.LEFT, padx=5)
 
-        # Show the request by default
+      
         show_request()
 
 
