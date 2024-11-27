@@ -36,10 +36,15 @@
     ```
 3. Compilați codul in python:
     ```bash
-    gcc http_proxy.c -o http_proxy
+    gcc -o http_proxy http_proxy.c -lhttp_parser -lpthread
     ```
 ## Usage 🧰
 > Rularea proxy-ului:
+- Porneste serverul http proxy prima oara:
+```bash
+./http_proxy
+````
+- Porneste interfata grafica:
 ```bash
 python3 gui.py
 ```
