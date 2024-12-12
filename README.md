@@ -58,7 +58,7 @@
    ```
 4. Compilați codul proxy-ului:
     ```bash
-    gcc -o http_proxy http_proxy.c -lhttp_parser -lpthread
+    gcc -o copy copy.c -lhttp_parser -ljansson -lssl -lcrypto -lpthread
     ```
 
 5. Instalați dependențele pentru interfața grafică:
