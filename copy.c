@@ -8,12 +8,15 @@
 #include <http_parser.h>
 #include <sys/socket.h>
 #include <time.h>
+#include <jansson.h>  // JSON parsing library
 
 #define BUFFER_SIZE 8192
 #define PROXY_PORT 8080
 #define GUI_PORT 9090  // Port for GUI communication
 #define INTERCEPT_PORT 9091  // Port for intercept toggle control
-#define MAX_HISTORY 1000  // Maximum number of history entries
+#define BLOCKED_DOMAINS_PORT 9092  // Port for blocked domains update
+#define MAX_HISTORY 1000
+#define MAX_BLOCKED_DOMAINS 100
 
 typedef struct {
     char method[8];
@@ -40,6 +43,94 @@ int history_count = 0;
 int intercept_enabled = 1;
 pthread_mutex_t intercept_lock;
 
+// Global blocked domains array
+char blocked_domains[MAX_BLOCKED_DOMAINS][256];
+int blocked_domains_count = 0;
+pthread_mutex_t blocked_domains_lock;
+
+int is_domain_blocked(const char* host) {
+    pthread_mutex_lock(&blocked_domains_lock);
+    
+    for (int i = 0; i < blocked_domains_count; i++) {
+        if (strstr(host, blocked_domains[i]) != NULL) {
+            pthread_mutex_unlock(&blocked_domains_lock);
+            return 1;
+        }
+    }
+    
+    pthread_mutex_unlock(&blocked_domains_lock);
+    return 0;
+}
+
+void update_blocked_domains(const char* json_str) {
+    pthread_mutex_lock(&blocked_domains_lock);
+    
+    // Reset current blocked domains
+    blocked_domains_count = 0;
+    
+    // Parse JSON
+    json_error_t error;
+    json_t* root = json_loads(json_str, 0, &error);
+    
+    if (root && json_is_array(root)) {
+        size_t index;
+        json_t* value;
+        
+        json_array_foreach(root, index, value) {
+            if (json_is_string(value) && blocked_domains_count < MAX_BLOCKED_DOMAINS) {
+                const char* domain = json_string_value(value);
+                strncpy(blocked_domains[blocked_domains_count], domain, sizeof(blocked_domains[0]) - 1);
+                blocked_domains_count++;
+            }
+        }
+    }
+    
+    if (root) json_decref(root);
+    
+    pthread_mutex_unlock(&blocked_domains_lock);
+    
+    printf("Updated blocked domains. Total: %d\n", blocked_domains_count);
+}
+
+void* blocked_domains_listener(void* arg) {
+    int blocked_domains_socket = socket(AF_INET, SOCK_STREAM, 0);
+    if (blocked_domains_socket < 0) {
+        perror("Failed to create blocked domains socket");
+        return NULL;
+    }
+
+    struct sockaddr_in blocked_domains_addr;
+    blocked_domains_addr.sin_family = AF_INET;
+    blocked_domains_addr.sin_addr.s_addr = INADDR_ANY;
+    blocked_domains_addr.sin_port = htons(BLOCKED_DOMAINS_PORT);
+
+    if (bind(blocked_domains_socket, (struct sockaddr*)&blocked_domains_addr, sizeof(blocked_domains_addr)) < 0) {
+        perror("Failed to bind blocked domains socket");
+        close(blocked_domains_socket);
+        return NULL;
+    }
+
+    listen(blocked_domains_socket, 1);
+    printf("Blocked domains listener running on port %d\n", BLOCKED_DOMAINS_PORT);
+
+    while (1) {
+        int control_socket = accept(blocked_domains_socket, NULL, NULL);
+        if (control_socket < 0) {
+            perror("Failed to accept blocked domains connection");
+            continue;
+        }
+
+        char json_buffer[BUFFER_SIZE];
+        int n = recv(control_socket, json_buffer, sizeof(json_buffer) - 1, 0);
+        json_buffer[n] = '\0';
+
+        update_blocked_domains(json_buffer);
+        close(control_socket);
+    }
+
+    close(blocked_domains_socket);
+    return NULL;
+}
 
 int on_url(http_parser* parser, const char* at, size_t length) {
     strncat(current_request.url, at, length);
@@ -149,6 +240,17 @@ void* handle_client(void* arg) {
     buffer[bytes_read] = '\0';
 
     parse_http_request(buffer, bytes_read);
+
+    // Check if domain is blocked
+    char host1[256];
+    sscanf(current_request.headers, "Host: %s", host1);
+
+    if (is_domain_blocked(host1)) {
+        const char* blocked_response = "HTTP/1.1 403 Forbidden\r\nContent-Type: text/plain\r\n\r\nDomain is blocked by proxy";
+        send(client_socket, blocked_response, strlen(blocked_response), 0);
+        close(client_socket);
+        return NULL;
+    }
 
    
     pthread_mutex_lock(&intercept_lock);
@@ -285,16 +387,19 @@ void accept_connections(int server_fd) {
 
 int main() {
     pthread_mutex_init(&intercept_lock, NULL);
+    pthread_mutex_init(&blocked_domains_lock, NULL);
 
     int server_fd = create_server_socket(PROXY_PORT);
     printf("Proxy Server running on port %d\n", PROXY_PORT);
 
-    pthread_t control_thread;
+    pthread_t control_thread, blocked_domains_thread;
     pthread_create(&control_thread, NULL, intercept_control_listener, NULL);
+    pthread_create(&blocked_domains_thread, NULL, blocked_domains_listener, NULL);
 
     accept_connections(server_fd);
 
     close(server_fd);
     pthread_mutex_destroy(&intercept_lock);
+    pthread_mutex_destroy(&blocked_domains_lock);
     return 0;
 }
