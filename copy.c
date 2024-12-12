@@ -9,6 +9,13 @@
 #include <sys/socket.h>
 #include <time.h>
 #include <jansson.h>  // JSON parsing library
+#include <openssl/bio.h>
+#include <openssl/evp.h>
+
+#define MAX_CREDENTIALS 100
+#define MAX_USERNAME_LENGTH 50
+#define MAX_PASSWORD_LENGTH 50
+#define CREDENTIALS_FILE "credentials.txt"
 
 #define BUFFER_SIZE 8192
 #define PROXY_PORT 8080
@@ -17,6 +24,14 @@
 #define BLOCKED_DOMAINS_PORT 9092  // Port for blocked domains update
 #define MAX_HISTORY 1000
 #define MAX_BLOCKED_DOMAINS 100
+
+typedef struct {
+    char username[MAX_USERNAME_LENGTH];
+    char password[MAX_PASSWORD_LENGTH];
+} Credential;
+
+Credential valid_credentials[MAX_CREDENTIALS];
+int credentials_count = 0;
 
 typedef struct {
     char method[8];
@@ -43,7 +58,7 @@ int history_count = 0;
 int intercept_enabled = 1;
 pthread_mutex_t intercept_lock;
 
-// Global blocked domains array
+
 char blocked_domains[MAX_BLOCKED_DOMAINS][256];
 int blocked_domains_count = 0;
 pthread_mutex_t blocked_domains_lock;
@@ -62,13 +77,110 @@ int is_domain_blocked(const char* host) {
     return 0;
 }
 
+int load_credentials() {
+    FILE* file = fopen(CREDENTIALS_FILE, "r");
+    if (file == NULL) {
+        perror("Failed to open credentials file");
+        return 0;
+    }
+
+    credentials_count = 0;
+    while (
+        fscanf(file, "%49[^:]:%49s", 
+            valid_credentials[credentials_count].username, 
+            valid_credentials[credentials_count].password
+        ) == 2 && 
+        credentials_count < MAX_CREDENTIALS
+    ) {
+        credentials_count++;
+    }
+
+    fclose(file);
+    printf("Loaded %d credentials\n", credentials_count);
+    return credentials_count > 0;
+}
+
+int verify_authentication(const char* request) {
+    
+    const char* auth_line = strstr(request, "Proxy-Authorization: Basic ");
+    if (auth_line == NULL) {
+        return 0;  
+    }
+
+   
+    const char* end_line = strchr(auth_line, '\r');
+    if (end_line == NULL) end_line = strchr(auth_line, '\n');
+    if (end_line == NULL) end_line = auth_line + strlen(auth_line);
+
+    
+    char auth_header[512];
+    size_t line_length = end_line - auth_line;
+    strncpy(auth_header, auth_line, line_length);
+    auth_header[line_length] = '\0';
+
+    
+    const char* base64_token = auth_header + strlen("Proxy-Authorization: Basic ");
+
+    
+    BIO *bio, *b64;
+    char* decoded_token = NULL;
+    int decoded_length;
+
+    
+    b64 = BIO_new(BIO_f_base64());
+    bio = BIO_new_mem_buf(base64_token, strlen(base64_token));
+    bio = BIO_push(b64, bio);
+
+    
+    BIO_set_flags(bio, BIO_FLAGS_BASE64_NO_NL);
+
+    
+    decoded_token = malloc(strlen(base64_token));
+    decoded_length = BIO_read(bio, decoded_token, strlen(base64_token));
+    
+    
+    decoded_token[decoded_length] = '\0';
+
+    
+    BIO_free_all(bio);
+
+    if (decoded_length <= 0) {
+        free(decoded_token);
+        return 0;
+    }
+
+    
+    char* username = decoded_token;
+    char* password = strchr(decoded_token, ':');
+    
+    if (password == NULL) {
+        free(decoded_token);
+        return 0;
+    }
+    
+    *password = '\0';  
+    password++;  
+
+   
+    for (int i = 0; i < credentials_count; i++) {
+        if (strcmp(valid_credentials[i].username, username) == 0 && 
+            strcmp(valid_credentials[i].password, password) == 0) {
+            free(decoded_token);
+            return 1;
+        }
+    }
+
+    free(decoded_token);
+    return 0;
+}
+
 void update_blocked_domains(const char* json_str) {
     pthread_mutex_lock(&blocked_domains_lock);
     
-    // Reset current blocked domains
+    
     blocked_domains_count = 0;
     
-    // Parse JSON
+    
     json_error_t error;
     json_t* root = json_loads(json_str, 0, &error);
     
@@ -241,7 +353,23 @@ void* handle_client(void* arg) {
 
     parse_http_request(buffer, bytes_read);
 
-    // Check if domain is blocked
+    char buffer_copy[BUFFER_SIZE];
+    strncpy(buffer_copy, buffer, sizeof(buffer_copy) - 1);
+    buffer_copy[sizeof(buffer_copy) - 1] = '\0';
+
+    
+    if (!verify_authentication(buffer_copy)) {
+        const char* unauthorized_response = 
+            "HTTP/1.1 401 Unauthorized\r\n"
+            "WWW-Authenticate: Basic realm=\"Proxy\"\r\n"
+            "Content-Type: text/plain\r\n\r\n"
+            "Authentication required";
+        send(client_socket, unauthorized_response, strlen(unauthorized_response), 0);
+        close(client_socket);
+        return NULL;
+    }
+
+    
     char host1[256];
     sscanf(current_request.headers, "Host: %s", host1);
 
@@ -386,6 +514,12 @@ void accept_connections(int server_fd) {
 }
 
 int main() {
+    
+    if (!load_credentials()) {
+        fprintf(stderr, "Failed to load credentials. Exiting...\n");
+        return 1;
+    }
+
     pthread_mutex_init(&intercept_lock, NULL);
     pthread_mutex_init(&blocked_domains_lock, NULL);
 
