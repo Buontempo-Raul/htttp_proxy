@@ -56,7 +56,12 @@
    make
    sudo make install
    ```
-4. Compilați codul proxy-ului:
+4.Instalați biblioteca ssh:  
+- Pentru majoritatea distribuțiilor Linux (Ubuntu/Debian), utilizați comanda:
+  ```bash
+   sudo apt-get install libssl-dev
+   ```
+5. Compilați codul proxy-ului:
     ```bash
     gcc -o copy copy.c -lhttp_parser -ljansson -lssl -lcrypto -lpthread
     ```
@@ -72,12 +77,12 @@
 
 1. Rulați serverul proxy HTTP:
     ```bash
-    ./http_proxy
+    ./copy
     ```
 
 2. Porniți interfața grafică:
     ```bash
-    python3 gui.py
+    python3 copy.py
     ```
 
 ---
@@ -90,7 +95,7 @@
 
 2. Dacă browser-ul nu permite setarea manuală a proxy-ului, puteți testa proxy-ul folosind comanda `curl`:
     ```bash
-    curl -x localhost:8080 http://example.com
+    curl -x -U username:password localhost:8080 http://example.com
     ```
 
 ---
