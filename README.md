@@ -17,8 +17,11 @@
 ## Features 🌐
 
 - **Interceptare Cereri**: Interceptează cererile HTTP de la clienți.
+- **Istoric Cereri**: Un istoric unde sunt afisate toate cererile ce au primit raspuns.
+- **Coada de Cereri**: O coada unde sunt afisate cererile ce asteapta a fi procesate.
+- **Oprire/Pornire Interceptare**: Un buton care permite oprirea/pornirea interceptarii.
+- **Black list**: Lista in care pot fi introduse site-uri care sa nu poata fi accesate de utilizator.
 - **Editare Antete**: Permite modificarea antetelor HTTP.
-- **Modificare Conținut**: Reguli personalizate pentru modificarea răspunsurilor HTTP.
 - **Filtrare Conținut**: Filtrare bazată pe reguli definite.
 - **Modificare Link-uri**: Schimbă link-urile din răspunsuri pentru redirecționare.
 - **Interfață Grafică**: Permite gestionarea ușoară a cererilor și răspunsurilor.
@@ -30,6 +33,7 @@
 - **C**: Limbaj principal pentru implementarea proxy-ului.
 - **Python (Tkinter)**: Folosit pentru interfața grafică.
 - **Socket Programming**: Gestionează comunicațiile între client și server.
+- **Threading Programming**: Gestioneaza mai multi utilizatori contemporan.
 - **Linux**: Sistem de operare utilizat pentru rularea proxy-ului.
 
 ---
@@ -77,26 +81,25 @@
 
 1. Rulați serverul proxy HTTP:
     ```bash
-    ./copy
+    ./http_proxy
     ```
 
 2. Porniți interfața grafică:
     ```bash
-    python3 copy.py
+    python3 gui.py
     ```
-
+3. Folositi un web browser sau dintr-un terminal Linux:
+   ```bash
+   curl -U user:password -x localhost:port_number http://example.com
 ---
 
 ## Connect to Browser 🌐
 
-1. Configurați manual setările proxy din browser:
+1. Cautati setarile aferente server-ului proxy.
+2. Configurați manual setările proxy din browser:
     - **Adresă**: `localhost`
     - **Port**: `8080`
-
-2. Dacă browser-ul nu permite setarea manuală a proxy-ului, puteți testa proxy-ul folosind comanda `curl`:
-    ```bash
-    curl -x -U username:password localhost:8080 http://example.com
-    ```
+3. Daca browser-ul web nu permite configurarea manuala folositi un terminal Linux.
 
 ---
 
