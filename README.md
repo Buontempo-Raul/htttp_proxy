@@ -11,6 +11,7 @@
 - [Usage](#usage)
 - [Connect to Browser](#connect-to-browser)
 - [Graphical Interface](#graphical-interface)
+- [Possible Solutions](#possible-solutions)
 
 ---
 
@@ -74,6 +75,10 @@
     ```bash
     pip install tkinter
     ```
+6. Modificati fisierul credentials adaugand username-ul si parola dorita:
+    ```bash
+    username:password
+    ```
 
 ---
 
@@ -118,3 +123,13 @@ Pentru a folosi interfața, asigurați-vă că serverul proxy rulează înainte 
 - **Tab Răspunsuri**: Vizualizați și modificați antetele și conținutul răspunsurilor HTTP.
 - **Tab Istoric**: Consultați istoricul cererilor/răspunsurilor procesate.
 - **Control Interceptare**: Activați sau dezactivați interceptarea traficului în timp real.
+
+---
+
+## Possible Solutions 🔧
+
+In caz ca nu functioneaza server-ul proxy incercati sa verificati urmatoarele aspecte:
+1. Instalarea corecta a bibliotecilor necesare.
+2. Fisierul **credentials.txt** contine username-ul si parola corecta.
+3. Folositi comanda corecta in terminalul Linux.
+4. Efectuati o cerere de tip http **NU** https.
