@@ -41,6 +41,85 @@ class ProxyServerGUI:
         self.start_gui_listener()
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
 
+    def save_and_forward_request(self):
+        if self.current_selected_request:
+            try:
+                # Collect modified headers and body
+                headers = self.request_headers.get("1.0", tk.END).strip()
+                body = self.request_body.get("1.0", tk.END).strip()
+                
+                # Reconstruct the HTTP request
+                modified_request = f"{headers}\r\n\r\n{body}"
+                
+                try:
+                    # Get the client socket
+                    client_socket = self.current_selected_request['client_socket']
+                    request_id = self.current_selected_request['id']
+                    
+                    # Send edit signal
+                    client_socket.sendall("EDIT\n\n".encode())
+                    
+                    # Send message length as a fixed-length string (padded with spaces)
+                    message_length = str(len(modified_request)).ljust(10)
+                    print(message_length)
+                    client_socket.sendall(message_length.encode())
+
+                    # Wait for acknowledgment with timeout
+                    client_socket.settimeout(5.0)  # 5 second timeout
+                    response = client_socket.recv(1024).decode().strip()
+                    if response != "READY":
+                        self.remove_request_from_waiting_list(request_id)
+                        messagebox.showerror("Error", "Server did not acknowledge message length")
+                        client_socket.close()
+                        return
+
+                    print(modified_request)
+                    # Send modified request
+                    client_socket.sendall(modified_request.encode())
+                    
+                    # Wait for confirmation
+                    response = client_socket.recv(1024).decode().strip()
+                    if response != "OK":
+                        self.remove_request_from_waiting_list(request_id)
+                        messagebox.showerror("Error", "Failed to send modified request")
+                        client_socket.close()
+                        return
+                    
+                    # Remove from waiting requests
+                    self.remove_request_from_waiting_list(request_id)
+                    
+                    messagebox.showinfo("Success", "Request modified and forwarded successfully")
+                    
+                except socket.timeout:
+                    self.remove_request_from_waiting_list(request_id)
+                    messagebox.showerror("Error", "Connection timed out")
+                except ConnectionResetError:
+                    self.remove_request_from_waiting_list(request_id)
+                    messagebox.showerror("Error", "Connection was reset by the server")
+                except Exception as e:
+                    self.remove_request_from_waiting_list(request_id)
+                    messagebox.showerror("Error", f"Failed to forward modified request: {str(e)}")
+                finally:
+                    try:
+                        client_socket.close()
+                    except:
+                        pass
+                    
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to prepare modified request: {str(e)}")
+
+    def remove_request_from_waiting_list(self, request_id):
+        """Remove a request from the waiting list and update the GUI"""
+        # Remove from waiting requests list
+        self.waiting_requests = [
+            req for req in self.waiting_requests 
+            if req['id'] != request_id
+        ]
+        
+        # Update GUI
+        self.root.after(0, self.update_waiting_requests_list)
+        self.root.after(0, self.clear_request_display)
+
     def load_blocked_domains(self):
         """Load blocked domains from a JSON file"""
         try:
@@ -143,7 +222,7 @@ class ProxyServerGUI:
     def listen_for_requests(self):
         while True:
             self.client_socket, _ = self.server_socket.accept()
-            data = self.client_socket.recv(8192).decode(errors="replace")
+            data = self.client_socket.recv(20000).decode(errors="replace")
 
             # Increment request ID
             self.current_request_id += 1
@@ -475,6 +554,10 @@ class ProxyServerGUI:
         self.forward_request_btn.pack(side=tk.LEFT, padx=5)
         self.drop_request_btn = ttk.Button(self.request_buttons_frame, text="Drop Request", command=self.drop_request)
         self.drop_request_btn.pack(side=tk.LEFT, padx=5)
+
+        self.save_and_forward_btn = ttk.Button(self.request_buttons_frame, text="Save & Forward Request", command=self.save_and_forward_request)
+        self.save_and_forward_btn.pack(side=tk.LEFT, padx=5)
+
 
     def create_response_panel(self):
         response_frame = ttk.Frame(self.h_paned)

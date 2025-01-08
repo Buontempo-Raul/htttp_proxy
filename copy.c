@@ -7,6 +7,7 @@
 #include <netdb.h>
 #include <http_parser.h>
 #include <sys/socket.h>
+#include <sys/time.h>
 #include <time.h>
 #include <jansson.h>  // JSON parsing library
 #include <openssl/bio.h>
@@ -17,13 +18,15 @@
 #define MAX_PASSWORD_LENGTH 50
 #define CREDENTIALS_FILE "credentials.txt"
 
-#define BUFFER_SIZE 8192
+#define BUFFER_SIZE 100000
 #define PROXY_PORT 8080
 #define GUI_PORT 9090  // Port for GUI communication
 #define INTERCEPT_PORT 9091  // Port for intercept toggle control
 #define BLOCKED_DOMAINS_PORT 9092  // Port for blocked domains update
 #define MAX_HISTORY 1000
 #define MAX_BLOCKED_DOMAINS 100
+
+
 
 typedef struct {
     char username[MAX_USERNAME_LENGTH];
@@ -307,7 +310,7 @@ void add_to_history(const char* method, const char* url, const char* protocol, c
 }
 
 
-int communicate_with_gui(const char* message, const char* type) {
+int communicate_with_gui(char* message, const char* type) {
     int gui_socket = socket(AF_INET, SOCK_STREAM, 0);
     if (gui_socket < 0) {
         perror("Failed to create socket");
@@ -332,8 +335,84 @@ int communicate_with_gui(const char* message, const char* type) {
 
     char decision[BUFFER_SIZE];
     int n = recv(gui_socket, decision, sizeof(decision), 0);
-    close(gui_socket);
+    decision[n]='\0';
+    //close(gui_socket);
 
+    if (n > 0 && strncmp(decision, "EDIT", 4) == 0) 
+    {
+        char message_length_str[11];  // 10 digits plus null terminator
+        ssize_t length_received = recv(gui_socket, message_length_str, 10, MSG_WAITALL);
+        if (length_received != 10) {
+            printf("%s\t",message_length_str);
+            perror("Failed to receive message length");
+            close(gui_socket);
+            return 0;
+        }
+        message_length_str[10] = '\0';
+        
+        // Convert length string to integer, trimming any padding
+        char *endptr;
+        long new_message_size = strtol(message_length_str, &endptr, 10);
+        if (new_message_size <= 0 || new_message_size > BUFFER_SIZE) {
+            fprintf(stderr, "Invalid message size received: %ld\n", new_message_size);
+            close(gui_socket);
+            return 0;
+        }
+
+        // Send acknowledgment
+        const char* ready_message = "READY";
+        if (send(gui_socket, ready_message, strlen(ready_message), 0) == -1) {
+            perror("Failed to send acknowledgment");
+            close(gui_socket);
+            return 0;
+        }
+
+        // Allocate buffer for new message
+        char* new_message = (char*)malloc(new_message_size + 1);
+        if (new_message == NULL) {
+            perror("Memory allocation failed");
+            close(gui_socket);
+            return 0;
+        }
+
+        // Receive the modified request
+        size_t total_received = 0;
+        while (total_received < new_message_size) {
+            ssize_t received = recv(gui_socket, 
+                                new_message + total_received, 
+                                new_message_size - total_received, 
+                                0);
+            if (received <= 0) {
+                perror("Failed to receive modified request");
+                free(new_message);
+                close(gui_socket);
+                return 0;
+            }
+            total_received += received;
+        }
+        new_message[new_message_size] = '\0';
+        parse_http_request(new_message,new_message_size);
+
+
+        // Copy the new message to the buffer
+        if (new_message_size < BUFFER_SIZE) {
+            memcpy(message, new_message, new_message_size + 1);
+
+            // Send confirmation
+            const char* ok_message = "OK";
+            send(gui_socket, ok_message, strlen(ok_message), 0);
+            
+            free(new_message);
+            close(gui_socket);
+            return 1;
+        } else {
+            fprintf(stderr, "Edited message too large\n");
+            free(new_message);
+            close(gui_socket);
+            return 0;
+        }
+    }
+   
     if (n > 0 && strncmp(decision, "FORWARD", 7) == 0) return 1;
     if (strcmp(type, "REQUEST") == 0) {
         printf("Request was dropped by the GUI\n");
@@ -357,7 +436,7 @@ void* handle_client(void* arg) {
     strncpy(buffer_copy, buffer, sizeof(buffer_copy) - 1);
     buffer_copy[sizeof(buffer_copy) - 1] = '\0';
 
-    
+    // Authentication check
     if (!verify_authentication(buffer_copy)) {
         const char* unauthorized_response = 
             "HTTP/1.1 401 Unauthorized\r\n"
@@ -369,38 +448,35 @@ void* handle_client(void* arg) {
         return NULL;
     }
 
-    
-    char host1[256];
-    sscanf(current_request.headers, "Host: %s", host1);
+    // Get method and protocol before potential modification
+    char method[16] = "GET";  
+    char protocol[16] = "HTTP"; 
+    sscanf(buffer, "%s %s %s", method, current_request.url, protocol);
 
-    if (is_domain_blocked(host1)) {
+    // Check intercept status
+    pthread_mutex_lock(&intercept_lock);
+    int intercept = intercept_enabled;
+    pthread_mutex_unlock(&intercept_lock);
+
+    // Communicate with GUI first if intercept is enabled
+    if (intercept && !communicate_with_gui(buffer, "REQUEST")) {
+        close(client_socket);
+        return NULL; 
+    }
+
+    // After potential modification by GUI, get the host
+    char host[256];
+    sscanf(current_request.headers, "Host: %s", host);
+
+    // Check if domain is blocked
+    if (is_domain_blocked(host)) {
         const char* blocked_response = "HTTP/1.1 403 Forbidden\r\nContent-Type: text/plain\r\n\r\nDomain is blocked by proxy";
         send(client_socket, blocked_response, strlen(blocked_response), 0);
         close(client_socket);
         return NULL;
     }
 
-   
-    pthread_mutex_lock(&intercept_lock);
-    int intercept = intercept_enabled;
-    pthread_mutex_unlock(&intercept_lock);
-
-    char host[256];
-    sscanf(current_request.headers, "Host: %s", host);
-
-    char method[16] = "GET";  
-    char protocol[16] = "HTTP"; 
-
-   
-    sscanf(buffer, "%s %s %s", method, current_request.url, protocol);
-
-    
-    if (intercept && !communicate_with_gui(buffer, "REQUEST")) {
-        close(client_socket);
-        return NULL; 
-    }
-
-    
+    // Connect to server
     int server_socket;
     struct sockaddr_in server_addr;
     struct hostent* server = gethostbyname(host);
@@ -418,22 +494,58 @@ void* handle_client(void* arg) {
     connect(server_socket, (struct sockaddr*)&server_addr, sizeof(server_addr));
     send(server_socket, buffer, bytes_read, 0);
 
-    
+    // Handle response
     char response_buffer[BUFFER_SIZE];
-    int response_size = 0;
-    while ((response_size = recv(server_socket, response_buffer, sizeof(response_buffer), 0)) > 0) {
-        response_buffer[response_size] = '\0';
+    int response_size;
+    int total_size = 0;
+    char* total_buffer = (char*)malloc(BUFFER_SIZE);
+    total_buffer[0] = '\0';
 
-       
-        add_to_history(method, current_request.url, protocol, host, buffer, response_buffer);
+    struct timeval timeout;
+    timeout.tv_sec = 1;  // Timeout in seconds
+    timeout.tv_usec = 0; 
 
-     
-        if (intercept && !communicate_with_gui(response_buffer, "RESPONSE")) {
-            break;
-        }
-
-        send(client_socket, response_buffer, response_size, 0);
+    if (setsockopt(server_socket, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) < 0) {
+        perror("setsockopt failed");
+        exit(EXIT_FAILURE);
     }
+
+    while((response_size = recv(server_socket,response_buffer,sizeof(response_buffer),0)) > 0)
+    {
+        if(response_size == 0)
+            break;
+
+        printf("%d\n%s\n---------------\n",response_size,response_buffer);
+        total_size += response_size;
+
+        response_buffer[response_size] = '\0';
+        strncat(total_buffer,response_buffer, response_size);
+
+        printf("\n            GOOD            \n");
+    }
+    printf("\n+++++++++++++++\n%s\n",total_buffer);
+
+    if(intercept && !communicate_with_gui(total_buffer, "RESPONSE")){
+        close(server_socket);
+        close(client_socket);
+        return NULL;
+    }
+
+    send(client_socket, total_buffer, total_size,0);
+
+    // while ((response_size = recv(server_socket, response_buffer, sizeof(response_buffer), 0)) > 0) {
+    //     response_buffer[response_size] = '\0';
+        
+    //     printf("%s\n\n",response_buffer);
+
+    //     add_to_history(method, current_request.url, protocol, host, buffer, response_buffer);
+
+    //     if (intercept && !communicate_with_gui(response_buffer, "RESPONSE")) { //communicates to the GUI that its a response
+    //         break;
+    //     }
+
+    //     send(client_socket, response_buffer, response_size, 0);
+    // }
 
     close(server_socket);
     close(client_socket);
@@ -536,4 +648,4 @@ int main() {
     pthread_mutex_destroy(&intercept_lock);
     pthread_mutex_destroy(&blocked_domains_lock);
     return 0;
-}
+}   
